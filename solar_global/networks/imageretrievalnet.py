@@ -98,7 +98,7 @@ OUTPUT_DIM = {
 
 
 class SOLAR_Global_Retrieval(nn.Module):
-    def __init__(self, architecture, features, lwhiten, pool, whiten, meta, mode='train', pretrained_type='gl18', soa_layers='45'):
+    def __init__(self, architecture, features, lwhiten, pool, whiten, meta, mode='train', pretrained_type='gl18', soa_layers='45',size_image=None,bbxs=None):
         super(SOLAR_Global_Retrieval, self).__init__()
         self.features = ResNetSOAs(architecture, pretrained_type, soa_layers, mode)
         self.lwhiten = lwhiten
@@ -108,11 +108,30 @@ class SOLAR_Global_Retrieval(nn.Module):
         self.meta = meta
         self.mode = mode
         self.pool.mode = self.mode
-
+        self.size_image=size_image
+        self.bbxs=bbxs
     def forward(self, x):
         # x -> features
         o = self.features(x, self.mode)
+        ########add code here##########
+        print("yes")
+        if(self.bbxs !=None):
+            print("size_bbxs",self.bbxs)
+            print("size_image",self.size_image) # heigh,width
+            # print("size_bbxs",self.bbxs)
+            print("0 pass cnn",o.shape)
+            y_map= round((self.bbxs[1]/self.size_image[0])* o.shape[2])
+            h_map= round(((self.bbxs[3]/self.size_image[0])* o.shape[2])- y_map)
+            x_map= round((self.bbxs[0]/self.size_image[1])* o.shape[3])
+            w_map= round(((self.bbxs[2]/self.size_image[1])* o.shape[3]) -x_map)
 
+            print("y_map",y_map)
+            print("h_map",h_map)
+            print("x_map",x_map)
+            print("w_map",w_map)
+            o=o[:,:,y_map:(y_map+h_map),x_map:(x_map+w_map)]
+            print("o",o.shape)
+        ###############################
         # TODO: properly test (with pre-l2norm and/or post-l2norm)
         # if lwhiten exist: features -> local whiten
         if self.lwhiten is not None:
@@ -148,7 +167,7 @@ class SOLAR_Global_Retrieval(nn.Module):
         tmpstr += 'architecture: {}\n'.format(self.meta['architecture'])
         tmpstr += 'local_whitening: {}\n'.format(self.meta['local_whitening'])
         tmpstr += 'pooling: {}\n'.format(self.meta['pooling'])
-        tmpstr += 'p: {}\n'.format(self.pool.p.data.item())
+        # tmpstr += 'p: {}\n'.format(self.pool.p.data.item())
         tmpstr += 'regional: {}\n'.format(self.meta['regional'])
         tmpstr += 'whitening: {}\n'.format(self.meta['whitening'])
         tmpstr += 'outputdim: {}\n'.format(self.meta['outputdim'])
@@ -304,7 +323,7 @@ def extract_vectors(net, images, image_size, transform, bbxs=None, ms=[1], msp=1
 
     # creating dataset loader
     loader = torch.utils.data.DataLoader(
-            ImagesFromList(root='', images=images, imsize=image_size, bbxs=bbxs, transform=transform, mode=mode),
+            ImagesFromList(root='', images=images, imsize=image_size, bbxs=bbxs, transform=transform, mode=mode,net=net),
             batch_size=1, shuffle=False, num_workers=8, pin_memory=True
         )
 
@@ -312,13 +331,20 @@ def extract_vectors(net, images, image_size, transform, bbxs=None, ms=[1], msp=1
     with torch.no_grad():
         vecs = torch.zeros(net.meta['outputdim'], len(images))
         with tqdm(total=len(images)) as pbar:
-            for i, _input in enumerate(loader):
-                _input = _input.cuda()
-
+            for i, _input_ in enumerate(loader):
+                # _input = _input_.cuda()
+                ################add code here#######################
+                input = _input_[0].cuda()
+                net.bbxs=[_input_[1][value].numpy()[0] for value in range(len(_input_[1]))]
+                size_input= [input.shape[2],input.shape[3]]
+                print("input", input.shape)
+                print("size_input", size_input)
+                net.size_image= size_input
+                #####################################################
                 if len(ms) == 1 and ms[0] == 1:
-                    vecs[:, i] = extract_ss(net, _input)
+                    vecs[:, i] = extract_ss(net, input)
                 else:
-                    vecs[:, i] = extract_ms(net, _input, ms, msp)
+                    vecs[:, i] = extract_ms(net, input, ms, msp)
                 
                 if (i+1) % print_freq == 0:
                     pbar.update(print_freq)

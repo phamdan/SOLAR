@@ -24,7 +24,7 @@ class ImagesFromList(data.Dataset):
         images_fn (list): List of full image filename
     """
 
-    def __init__(self, root, images, imsize=None, bbxs=None, transform=None, loader=default_loader, mode='train',  pred_geom=False):
+    def __init__(self, root, images, imsize=None, bbxs=None, transform=None, loader=default_loader, mode='train',  pred_geom=False,net=None,size_image=None):
 
         images_fn = [os.path.join(root,images[i]) for i in range(len(images))]
 
@@ -39,7 +39,8 @@ class ImagesFromList(data.Dataset):
         self.transform = transform
         self.loader = loader
         self.mode = mode
-
+        self.net=net
+        self.size_image=size_image
     def __getitem__(self, index):
         """
         Args:
@@ -48,10 +49,26 @@ class ImagesFromList(data.Dataset):
         Returns:
             image (PIL): Loaded image
         """
+        import cv2
         path = self.images_fn[index]
         img = self.loader(path)
         imfullsize = max(img.size)
-
+        #########add code here ###########
+        print("yessssssssssssssssssss")
+        w_=self.bbxs[index][2]-self.bbxs[index][0]
+        print("w",w_)
+        h_=self.bbxs[index][3]-self.bbxs[index][1]
+        x_new= self.bbxs[index][0]
+        y_new= self.bbxs[index][1]
+        if(w_>h_):
+            h_=w_
+        else: 
+            w_=h_
+        bbxs2= (x_new,y_new,x_new+w_, y_new+h_)
+        print("bbx_checkkkkkkkk",self.bbxs[index])
+        img = img.crop(bbxs2)
+        print("ims_size",img.size)
+        ##############################################
         if self.mode == 'train':
             if self.imsize is not None:
                 if self.bbxs is not None:
@@ -66,19 +83,39 @@ class ImagesFromList(data.Dataset):
                 img = self.transform(img)
 
         elif self.mode == 'test':
-            if self.bbxs is not None:
-                img = img.crop(self.bbxs[index])
+            # if self.bbxs is not None:
+            #     img = img.crop(self.bbxs[index])
 
             if self.imsize is not None:
                 if self.bbxs is not None:
                     img = imthumbnail(img, self.imsize * max(img.size) / imfullsize)
                 else:
                      img = imthumbnail(img, self.imsize)
+                img = imthumbnail(img, self.imsize)
 
             if self.transform is not None:
                 img = self.transform(img)
-
-        return img
+        ##############################add code here###########################
+                ######## crop square ##########
+                print("img", img.shape)
+                size_input= [img.shape[1],img.shape[2]]
+                print("size_input", size_input)
+                self.net.size_image= size_input
+                size_original= cv2.imread(path).shape
+                print("size_original",size_original)
+                bbxs_=[0,0,0,0]
+                bbxs_[0]= 0
+                bbxs_[1]= 0
+                bbxs_[2]= ((self.bbxs[index][2]-self.bbxs[index][0])/w_ * size_input[1])
+                bbxs_[3]= ((self.bbxs[index][3]-self.bbxs[index][1])/h_ * size_input[0])
+                
+                # self.net.bbxs = bbxs_
+                print("bbxs_new",bbxs_)
+                ###################################
+        return img,bbxs_       
+        #################################################################
+            
+        # return img
 
     def __len__(self):
         return len(self.images_fn)
